@@ -1,5 +1,11 @@
 package ru.max.test.test2;
 
+import lombok.AllArgsConstructor;
+
 import java.time.Instant;
 
-public record Notification(String text, Instant create){}
+@AllArgsConstructor
+public class Notification {
+   private final String text;
+   private final Instant create;
+}

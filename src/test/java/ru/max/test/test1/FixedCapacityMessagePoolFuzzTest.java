@@ -16,11 +16,11 @@ class FixedCapacityMessagePoolFuzzTest {
         final int capacity = 64;
         final int steps = 100_000;
 
-        var pool = new FixedCapacityMessagePool(capacity);
-        var model = new ReferencePool(capacity);
+        FixedCapacityMessagePool pool = new FixedCapacityMessagePool(capacity);
+        ReferencePool model = new ReferencePool(capacity);
 
         // фиксируем seed для детерминизма
-        var rnd = new Random(42);
+        Random rnd = new Random(42);
 
         // Вселенная возможных id: часть берём из существующих, часть — новые
         int idSeq = 0;
@@ -101,7 +101,7 @@ class FixedCapacityMessagePoolFuzzTest {
                 return null;
             }
             // эвикт головы
-            var it = fifo.entrySet().iterator();
+            Iterator<Map.Entry<String, Message>> it = fifo.entrySet().iterator();
             Map.Entry<String, Message> eldest = it.next();
             it.remove();
             Message evicted = eldest.getValue();
@@ -115,7 +115,7 @@ class FixedCapacityMessagePoolFuzzTest {
         }
 
         Message pollOldest() {
-            var it = fifo.entrySet().iterator();
+            Iterator<Map.Entry<String, Message>> it = fifo.entrySet().iterator();
             if (!it.hasNext()) return null;
             Map.Entry<String, Message> eldest = it.next();
             it.remove();

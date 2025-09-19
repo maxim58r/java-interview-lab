@@ -2,32 +2,25 @@ package ru.max.test.test2;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import ru.max.test.config.Randoms;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.util.concurrent.locks.LockSupport.parkNanos;
 import static org.junit.jupiter.api.Assertions.*;
-
-final class NotificationFactory {
-    private static final AtomicInteger SEQ = new AtomicInteger();
-
-    static Notification n(String prefix) {
-        return new Notification(prefix + "-" + SEQ.getAndIncrement(), Instant.EPOCH);
-    }
-}
 
 class NotificationQueueTest {
 
     @Test
     void fifoAddAndPopOrder_singleThread() {
         var q = new NotificationQueue();
-        var n1 = NotificationFactory.n("A");
-        var n2 = NotificationFactory.n("B");
-        var n3 = NotificationFactory.n("C");
+        var n1 = Randoms.a(Notification.class);
+        var n2 = Randoms.a(Notification.class);
+        var n3 = Randoms.a(Notification.class);
 
         q.addNotification(n1);
         q.addNotification(n2);
@@ -46,9 +39,9 @@ class NotificationQueueTest {
         var q = new NotificationQueue();
         assertNull(q.randomNotification()); // пусто
 
-        var a = NotificationFactory.n("A");
-        var b = NotificationFactory.n("B");
-        var c = NotificationFactory.n("C");
+        var a = Randoms.a(Notification.class);
+        var b = Randoms.a(Notification.class);
+        var c = Randoms.a(Notification.class);
         q.addNotification(a);
         q.addNotification(b);
         q.addNotification(c);
@@ -68,37 +61,35 @@ class NotificationQueueTest {
 
     @Test
     @Timeout(10)
-        // чтобы не зависнуть при регрессии
     void concurrentAdders_onlyAdds_thenPopAll() throws Exception {
         var q = new NotificationQueue();
 
         int threads = 8, perThread = 5_000;
         int total = threads * perThread;
 
-        var start = new CyclicBarrier(threads);
-        ExecutorService es = Executors.newFixedThreadPool(threads);
-        try {
+        try (ExecutorService es = Executors.newFixedThreadPool(threads)) {
+            var start = new CyclicBarrier(threads);
             List<Future<?>> fs = new ArrayList<>();
+
             for (int t = 0; t < threads; t++) {
                 fs.add(es.submit(() -> {
                     start.await();
                     for (int i = 0; i < perThread; i++) {
-                        q.addNotification(NotificationFactory.n("X"));
+                        q.addNotification(Randoms.a(Notification.class));
                     }
                     return null;
                 }));
             }
+
+            // поднимем ошибки из потоков
             for (var f : fs) f.get();
 
             assertEquals(total, q.size());
 
-            // вытащим всё и убедимся, что ничего не потерялось/не дублируется
             int popped = 0;
             while (q.popNotification() != null) popped++;
             assertEquals(total, popped);
             assertEquals(0, q.size());
-        } finally {
-            es.shutdownNow();
         }
     }
 
@@ -110,47 +101,53 @@ class NotificationQueueTest {
         int producers = 4, consumers = 4, perProducer = 5_000;
         int total = producers * perProducer;
 
-        ExecutorService es = Executors.newFixedThreadPool(producers + consumers);
-        CountDownLatch producersDone = new CountDownLatch(producers);
-        CyclicBarrier go = new CyclicBarrier(producers + consumers);
-        AtomicInteger popped = new AtomicInteger();
+        try (ExecutorService es = Executors.newFixedThreadPool(producers + consumers)) {
+            CountDownLatch producersDone = new CountDownLatch(producers);
+            CyclicBarrier go = new CyclicBarrier(producers + consumers);
+            AtomicInteger popped = new AtomicInteger();
+            List<Future<?>> fs = new ArrayList<>();
 
-        try {
             // producers
             for (int p = 0; p < producers; p++) {
-                es.submit(() -> {
-                    go.await();
-                    for (int i = 0; i < perProducer; i++) {
-                        q.addNotification(NotificationFactory.n("P"));
+                fs.add(es.submit(() -> {
+                    try {
+                        go.await();
+                        for (int i = 0; i < perProducer; i++) {
+                            q.addNotification(Randoms.a(Notification.class));
+                        }
+                    } finally {
+                        producersDone.countDown(); // считаем всегда, даже если поток упал
                     }
-                    producersDone.countDown();
                     return null;
-                });
+                }));
             }
+
             // consumers
             for (int c = 0; c < consumers; c++) {
-                es.submit(() -> {
+                fs.add(es.submit(() -> {
                     go.await();
                     while (true) {
                         var n = q.popNotification();
                         if (n != null) {
                             if (popped.incrementAndGet() == total) break;
                         } else {
-                            // если производители завершились и очередь пуста — выходим
                             if (producersDone.getCount() == 0 && q.size() == 0) break;
-                            Thread.yield();
+                            // чуть отпустим CPU
+                            parkNanos(1_000_000);
                         }
                     }
                     return null;
-                });
+                }));
             }
 
             es.shutdown();
+
+            // если внутри были исключения — тест упадёт здесь
+            for (var f : fs) f.get();
+
             assertTrue(es.awaitTermination(12, TimeUnit.SECONDS), "Пулы не завершились вовремя");
             assertEquals(total, popped.get());
             assertEquals(0, q.size());
-        } finally {
-            es.shutdownNow();
         }
     }
 
@@ -159,33 +156,32 @@ class NotificationQueueTest {
     void getRandom_isSafeUnderConcurrentAdds() throws Exception {
         var q = new NotificationQueue();
 
-        ExecutorService es = Executors.newFixedThreadPool(3);
-        try {
+        try (ExecutorService es = Executors.newFixedThreadPool(3)) {
             Future<?> adder = es.submit(() -> {
                 for (int i = 0; i < 10_000; i++) {
-                    q.addNotification(NotificationFactory.n("R"));
+                    q.addNotification(Randoms.a(Notification.class));
                 }
+                return null;
             });
             Future<?> reader = es.submit(() -> {
                 for (int i = 0; i < 10_000; i++) {
-                    var r = q.randomNotification(); // не должен кидать
-                    if (r == null) {
-                        // допустимо только если очередь моментально пуста в начале
-                        // ничего не делаем
-                    } else {
+                    // не должен кидать и, если не пусто, не должен быть null
+                    var r = q.randomNotification();
+                    if (q.size() > 0) {
                         assertNotNull(r);
                     }
                 }
+                return null;
             });
+
             adder.get();
             reader.get();
 
-            // доберем всё, убедимся что состояние консистентно
+            // доберём всё, убеждаемся в консистентности
             int rest = 0;
             while (q.popNotification() != null) rest++;
             assertTrue(rest >= 0);
-        } finally {
-            es.shutdownNow();
+            assertEquals(0, q.size());
         }
     }
 }

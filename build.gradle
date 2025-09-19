@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '3.5.5'
     id 'io.spring.dependency-management' version '1.1.7'
+    // id 'idea' // опционально: чтобы IntelliJ точнее подхватывал sourceSets
 }
 
 group = 'ru.max'
@@ -14,6 +15,9 @@ java {
 
 configurations {
     compileOnly { extendsFrom annotationProcessor }
+    // конфиги для integrationTest наследуют зависимости тестов
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
 }
 
 repositories { mavenCentral() }
@@ -25,11 +29,40 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-
-    // Easy Random (core) — ОБЯЗАТЕЛЬНО укажи версию!
     testImplementation "org.jeasy:easy-random-core:5.0.0"
-
-//    testRuntimeOnly 'org.junit.platform:junit-platform-launcher' // можно убрать, если IDE не требует
 }
 
-tasks.named('test') { useJUnitPlatform() }
+sourceSets {
+    // стандартные test-ресурсы остаются как есть
+    test {
+        java.srcDir 'src/test/java'
+        resources.srcDir 'src/test/resources'
+    }
+    // отдельный набор исходников для интеграционных тестов
+    integrationTest {
+        java.srcDir 'src/integrationTest/java'
+        resources.srcDir 'src/integrationTest/resources'
+        // правильные classpath-ы для компиляции/запуска IT
+        compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+        runtimeClasspath  += output + compileClasspath
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform() // JUnit 5 для unit-тестов
+}
+
+// отдельная задача для интеграционных тестов
+tasks.register('integrationTest', Test) {
+    description = 'Runs Spring Boot integration tests.'
+    group = 'verification'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath       = sourceSets.integrationTest.runtimeClasspath
+    shouldRunAfter tasks.test
+}
+
+// чтобы `./gradlew check` гонял и IT
+tasks.named('check') {
+    dependsOn tasks.named('integrationTest')
+}

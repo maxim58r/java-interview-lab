@@ -10,7 +10,8 @@ import java.util.List;
 import java.util.stream.Stream;
 
 public final class Randoms {
-    private Randoms() {}
+    private Randoms() {
+    }
 
     // Базовые параметры: повторяемость, адекватные размеры, перезапись дефолтных полей
     private static final EasyRandomParameters P = new EasyRandomParameters()
@@ -24,29 +25,39 @@ public final class Randoms {
 
     private static final EasyRandom ER = new EasyRandom(P);
 
+    private static EasyRandom ER() {
+        return TL.get();
+    }
 
-    /** Один объект любого класса. Каждый вызов — новые значения полей. */
+    private static final ThreadLocal<EasyRandom> TL = ThreadLocal.withInitial(() -> new EasyRandom(P));
+
+
+    /**
+     * Один объект любого класса. Каждый вызов — новые значения полей.
+     */
     public static <T> T a(Class<T> type) {
         return ER.nextObject(type);
     }
 
-    /** Несколько объектов. Удобно для параметризованных тестов/подготовки данных. */
+    /**
+     * Несколько объектов. Удобно для параметризованных тестов/подготовки данных.
+     */
     public static <T> List<T> many(Class<T> type, int size) {
         return Stream.generate(() -> a(type)).limit(size).toList();
     }
 
-    private static EasyRandom ER() { return TL.get(); }
-
-    private static final ThreadLocal<EasyRandom> TL = ThreadLocal.withInitial(() -> new EasyRandom(P));
-
-    /** Потокобезопасный
-     * Один объект любого класса. Каждый вызов — новые значения полей. */
+    /**
+     * Потокобезопасный
+     * Один объект любого класса. Каждый вызов — новые значения полей.
+     */
     public static <T> T aTS(Class<T> type) {
         return ER().nextObject(type);
     }
 
-    /** Потокобезопасный
-     * Несколько объектов. Удобно для параметризованных тестов/подготовки данных. */
+    /**
+     * Потокобезопасный
+     * Несколько объектов. Удобно для параметризованных тестов/подготовки данных.
+     */
     public static <T> List<T> manyTS(Class<T> type, int size) {
         return Stream.generate(() -> aTS(type)).limit(size).toList();
     }

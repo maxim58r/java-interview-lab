@@ -61,7 +61,7 @@ public class FixedCapacityMessagePool {
             Message evicted = fifo.pollFirstEntry().getValue();
             int idx = requireIndex(evicted.getId(), "add-evict");
 
-// УДАЛЯЕМ старую запись обязательно:
+            // УДАЛЯЕМ старую запись обязательно:
             pos.remove(evicted.getId());
 
             int last = bag.size() - 1;
@@ -69,7 +69,7 @@ public class FixedCapacityMessagePool {
                 Message tail = bag.get(last);
                 placeAtIdx(idx, tail); // tail -> idx, pos обновили внутри
             }
-// в последнюю ячейку кладём новый элемент (без изменения размера bag)
+            // в последнюю ячейку кладём новый элемент (без изменения размера bag)
             bag.set(last, m);
             pos.put(m.getId(), last);
             fifo.putLast(m.getId(), m);

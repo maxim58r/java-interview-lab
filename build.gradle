@@ -2,7 +2,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '3.5.5'
     id 'io.spring.dependency-management' version '1.1.7'
-    // id 'idea' // опционально: чтобы IntelliJ точнее подхватывал sourceSets
+    // id 'idea'
 }
 
 group = 'ru.max'
@@ -13,57 +13,80 @@ java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }
 }
 
-configurations {
-    compileOnly { extendsFrom annotationProcessor }
-    // конфиги для integrationTest наследуют зависимости тестов
-    integrationTestImplementation.extendsFrom testImplementation
-    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
-}
-
 repositories { mavenCentral() }
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter'
     implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation "org.jeasy:easy-random-core:5.0.0"
+    testImplementation 'org.jeasy:easy-random-core:5.0.0'
+
+    // при необходимости можно добавить отдельные зависимости ТОЛЬКО для integrationTest:
+    // integrationTestImplementation 'org.testcontainers:junit-jupiter:1.20.3'
+    // integrationTestImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
+/**
+ * 1) Сначала объявляем sourceSet для интеграционных тестов — Gradle сам создаст
+ *    integrationTestImplementation / integrationTestRuntimeOnly и др. конфигурации
+ */
 sourceSets {
-    // стандартные test-ресурсы остаются как есть
-    test {
-        java.srcDir 'src/test/java'
-        resources.srcDir 'src/test/resources'
-    }
-    // отдельный набор исходников для интеграционных тестов
     integrationTest {
         java.srcDir 'src/integrationTest/java'
         resources.srcDir 'src/integrationTest/resources'
-        // правильные classpath-ы для компиляции/запуска IT
+        // корректные classpath'ы
         compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
         runtimeClasspath  += output + compileClasspath
     }
 }
 
-tasks.named('test') {
-    useJUnitPlatform() // JUnit 5 для unit-тестов
+/**
+ * 2) Теперь расширяем созданные Gradle’ом конфигурации (НЕ создаём их вручную)
+ */
+configurations {
+    compileOnly { extendsFrom annotationProcessor }
+    integrationTestImplementation { extendsFrom testImplementation }
+    integrationTestRuntimeOnly   { extendsFrom testRuntimeOnly }
 }
 
-// отдельная задача для интеграционных тестов
+/**
+ * 3) Задача для интеграционных тестов
+ */
 tasks.register('integrationTest', Test) {
-    description = 'Runs Spring Boot integration tests.'
+    description = 'Runs integration tests.'
     group = 'verification'
-    useJUnitPlatform()
     testClassesDirs = sourceSets.integrationTest.output.classesDirs
     classpath       = sourceSets.integrationTest.runtimeClasspath
     shouldRunAfter tasks.test
+    useJUnitPlatform()
 }
 
-// чтобы `./gradlew check` гонял и IT
+/**
+ * 4) Запуск JUnit 5 для unit-тестов и опциональная фильтрация тегов через системные свойства
+ *    Пример запуска:
+ *      ./gradlew test -DincludeTags=fast -DexcludeTags=slow
+ *      ./gradlew integrationTest -DincludeTags=it
+ */
+tasks.named('test') {
+    useJUnitPlatform()
+    doFirst {
+        def inc = System.getProperty('includeTags')
+        def exc = System.getProperty('excludeTags')
+        useJUnitPlatform {
+            if (inc) includeTags(inc.split(','))
+            if (exc) excludeTags(exc.split(','))
+        }
+    }
+}
+
+/**
+ * 5) check будет запускать и unit-, и integrationTest
+ */
 tasks.named('check') {
     dependsOn tasks.named('integrationTest')
 }
